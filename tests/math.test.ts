@@ -24,9 +24,9 @@ describe("math", () => {
 
         // 👇 Comment this test to not cover the error branch (b === 0). 
         // You will see a gap in Branches.
-        //it("throws when dividing by zero", () => {
-         //   expect(() => divide(1, 0)).toThrow(/divide by zero/i);
-        //});
+        it("throws when dividing by zero", () => {
+            expect(() => divide(1, 0)).toThrow(/divide by zero/i);
+        });
     });
 
     describe("sumArray", () => {
@@ -36,8 +36,8 @@ describe("math", () => {
 
         // 👇 Comment this test to not cover the empty array branch. 
         // You will see a gap in Branches/Statements.
-        //it("returns 0 for empty array", () => {
-         //   expect(sumArray([])).toBe(0);
-        //});
+        it("returns 0 for empty array", () => {
+            expect(sumArray([])).toBe(0);
+        });
     });
 });
