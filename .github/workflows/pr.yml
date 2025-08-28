@@ -108,3 +108,75 @@ jobs:
           json-final-path: pr-coverage/coverage-final.json
           vite-config-path: pr-coverage/vitest.thresholds.js
           comment-on: pr
+
+  coverage-gate:
+    name: Coverage gate
+    needs: [report-coverage]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download PR coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-pull-request
+          path: pr-coverage
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.node_version }}
+
+      - name: Load thresholds from vitest.thresholds.js
+        id: thresholds
+        shell: bash
+        run: |
+          # Use node to read the thresholds file and set values in GitHub Actions output
+          node --input-type=module <<'NODE'
+          import { pathToFileURL } from 'node:url';
+          import path from 'node:path';
+          import { appendFileSync } from 'node:fs';
+
+          const out = process.env.GITHUB_OUTPUT;
+          if (!out) {
+            console.error('GITHUB_OUTPUT is not set');
+            process.exit(1);
+          }
+
+          const fileUrl = pathToFileURL(path.resolve('pr-coverage/vitest.thresholds.js')).href;
+          const mod = await import(fileUrl).catch(() => ({}));
+          const t = (mod && (mod.default ?? mod)) || {};
+
+          for (const k of ['lines','statements','functions','branches']) {
+            const v = Number.isFinite(t[k]) ? t[k] : 85;
+            appendFileSync(out, `${k}=${v}\n`, { encoding: 'utf8' });
+          }
+          NODE
+
+      - name: Check thresholds
+        shell: bash
+        run: |
+          SUM=pr-coverage/coverage-summary.json
+
+          # jq is installed in ubuntu-latest by default
+          L=$(jq '.total.lines.pct // 0' "$SUM")
+          S=$(jq '.total.statements.pct // 0' "$SUM")
+          F=$(jq '.total.functions.pct // 0' "$SUM")
+          B=$(jq '.total.branches.pct // 0' "$SUM")
+
+          echo "Coverage (PR):"
+          echo "  lines:      $L% (min ${{ steps.thresholds.outputs.lines }}%)"
+          echo "  statements: $S% (min ${{ steps.thresholds.outputs.statements }}%)"
+          echo "  functions:  $F% (min ${{ steps.thresholds.outputs.functions }}%)"
+          echo "  branches:   $B% (min ${{ steps.thresholds.outputs.branches }}%)"
+
+          FAIL=0
+          awk -v a="$L" -v b="${{ steps.thresholds.outputs.lines }}"       'BEGIN{ if (a<b) exit 1 }' || { echo "❌ lines below threshold"; FAIL=1; }
+          awk -v a="$S" -v b="${{ steps.thresholds.outputs.statements }}"  'BEGIN{ if (a<b) exit 1 }' || { echo "❌ statements below threshold"; FAIL=1; }
+          awk -v a="$F" -v b="${{ steps.thresholds.outputs.functions }}"   'BEGIN{ if (a<b) exit 1 }' || { echo "❌ functions below threshold"; FAIL=1; }
+          awk -v a="$B" -v b="${{ steps.thresholds.outputs.branches }}"    'BEGIN{ if (a<b) exit 1 }' || { echo "❌ branches below threshold"; FAIL=1; }
+
+          if [ "$FAIL" -ne 0 ]; then
+            echo "Coverage gate failed."
+            exit 1
+          fi
+
+          echo "✅ Coverage gate passed."
